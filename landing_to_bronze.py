@@ -1,4 +1,5 @@
 # src/bronze_engine.py
+import uuid
 from datetime import datetime, timezone
 from pyspark.sql import SparkSession, functions as F, types as T
 
@@ -6,7 +7,10 @@ from pyspark.sql import SparkSession, functions as F, types as T
 from data_profilers.schema_drift import profile_schema_drift, profile_corrupt_records
 from data_profilers.exploration import explore_data, write_exploration_to_iceberg
 
-def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: str, expected_schema: T.StructType, batch_id: str, source_format: str = "csv"):
+def ingest_to_bronze(spark: SparkSession, dataset_name: str, source_path: str, expected_schema: T.StructType, source_format: str = "csv"):
+    
+    # Generate a unique ID for this single ingestion run
+    run_id = str(uuid.uuid4())
     
     # 1. Audit: Check for file-level Schema Drift using instructor's tool
     profile_schema_drift(
@@ -15,7 +19,7 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
         expected_schema=expected_schema,
         source_format=source_format,
         dataset_name=dataset_name,
-        run_id=batch_id
+        run_id=run_id
     )
 
     # 2. Append _corrupt_record for Permissive Reading
@@ -35,7 +39,7 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
     ingestion_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
     records = raw_df \
         .withColumn("_source_file", F.input_file_name()) \
-        .withColumn("_batch_id", F.lit(batch_id)) \
+        .withColumn("_run_id", F.lit(run_id)) \
         .withColumn("_ingestion_timestamp", F.lit(ingestion_timestamp))
 
     # 5. Apply try_cast to convert Strings to Expected Schema Types
@@ -78,9 +82,9 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
         )
 
     # 7. Audit: Log Corrupt Records and Exploratory Stats using instructor's tools
-    profile_corrupt_records(landing_df, dataset_name=dataset_name, run_id=batch_id)
+    profile_corrupt_records(landing_df, dataset_name=dataset_name, run_id=run_id)
     
-    measures = explore_data(spark, landing_df, dataset_name=dataset_name, run_id=batch_id, required_columns=["id"], processing_stage="LANDING")
+    measures = explore_data(spark, landing_df, dataset_name=dataset_name, run_id=run_id, required_columns=["id"], processing_stage="LANDING")
     write_exploration_to_iceberg(spark, measures)
 
     # 8. Split Valid and Quarantine Data
@@ -94,5 +98,5 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
     valid_df.write.mode("append").partitionBy("_partition_date").format("parquet").save(valid_path)
     quarantine_df.write.mode("append").partitionBy("_partition_date").format("parquet").save(quarantine_path)
 
-    print(f"Batch {batch_id} complete. Valid records partitioned and written to {valid_path}.")
+    print(f"Ingestion complete for {dataset_name}. Valid records partitioned and written to {valid_path}.")
     return valid_df, quarantine_df
