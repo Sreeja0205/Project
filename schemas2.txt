@@ -8,14 +8,10 @@ relationship_schema = T.StructType([
 EXPECTED_SCHEMA = T.StructType([
     T.StructField("id", T.LongType(), False),
     T.StructField("move_id", relationship_schema, True),
+    T.StructField("picking_id", relationship_schema, True),
     T.StructField("product_id", relationship_schema, True),
     T.StructField("quantity", T.DecimalType(38, 18), True),
-    T.StructField("price_unit", T.DecimalType(38, 18), True),
-    T.StructField("discount", T.DecimalType(38, 18), True),
-    T.StructField("price_subtotal", T.DecimalType(38, 18), True),
-    T.StructField("sale_line_ids", T.StringType(), True), # Arrays like `[]` are safest kept as strings in Bronze
-    T.StructField("create_date", T.TimestampType(), True),
+    T.StructField("location_id", relationship_schema, True),
+    T.StructField("location_dest_id", relationship_schema, True),
     T.StructField("write_date", T.TimestampType(), True),
-    T.StructField("company_id", relationship_schema, True),
-    T.StructField("purchase_line_id", relationship_schema, True),
 ])
