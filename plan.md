@@ -38,3 +38,44 @@
 * Group the entire flattened dataset by Customer `id`.
 * Calculate **True Net Margin**: `SUM(invoice_lines.price_subtotal) - SUM(products.list_price * invoice_lines.quantity) - SUM(Return Processing Costs from move-lines)`.
 * Apply SQL `CASE WHEN` logic to categorize each customer ID into **Core Profit Drivers**, **Opportunistic Buyers**, or **Margin Detractors** based on their aggregated margin, discount frequency, and return volume. Feed this final table directly into Streamlit.
+
+
+
+
+---
+
+
+
+1. Business Needs Drive the Pipeline
+A data pipeline is useless if it doesn't answer specific questions. Before touching a database or writing a line of code, you must define:
+
+Stakeholders & Questions: Who is using this? (e.g., Sales Managers asking, "Which customers are actually profitable after discounts and returns?").
+
+KPIs & Formulas: The exact math behind the metrics (e.g., True Net Margin = Gross Sales - Discounts - Cost of Goods - Return Costs).
+
+Slicing (Dimensions): How do they want to view the KPI? (e.g., Filtering by Customer Segment, by Product Category, or by Month).
+
+2. Fact vs. Dimension Modeling
+This is the blueprint for how you structure your data. You must categorize your tables into two types:
+
+Fact Tables (The Action): These hold the measurable, transactional events that change constantly. In your project, order-lines (sales) and move-lines (returns) are facts.
+
+Dimension Tables (The Context): These hold the descriptive attributes you use to filter or group the facts. Your customers and products tables are dimensions.
+
+The "Grain": This is the most crucial rule in data modeling. You must define what one single row in your fact table represents. For your project, the grain is: One specific product purchased by one customer in a single transaction line.
+
+3. The Medallion Architecture
+This dictates how data physically moves, cleans itself, and transforms using Spark:
+
+Landing/Bronze: Raw, untouched data exactly as it arrived from the source systems (your initial CSVs). It acts as a historical archive.
+
+Silver: The cleanup zone. This is where you drop nulls, parse the messy partner_id strings into clean integers, standardise formats, and enforce data quality.
+
+Gold: The business-ready zone. This is where you join your Facts and Dimensions together into highly aggregated, optimized tables (e.g., gold_customer_profitability) specifically designed to feed your metrics.
+
+4. Serving the Results
+The final step is connecting a visualization tool (like Streamlit) to your Gold layer.
+
+Visual Selection: Match the chart type strictly to the KPI's intent. Use line charts for profit trends over time, and scatter plots to show the relationship between discount dependency and lifetime spend.
+
+Zero-Computation Rule: Dashboards should not perform heavy math. All the complex joins and profit calculations must be fully completed in the Gold layer so the Streamlit dashboard loads instantly.
