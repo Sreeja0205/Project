@@ -19,7 +19,6 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
     )
 
     # 2. Append _corrupt_record for Permissive Reading
-    # Read everything as String first to catch malformed rows without crashing
     read_schema = T.StructType(
         [T.StructField(field.name, T.StringType(), True) for field in expected_schema.fields] + 
         [T.StructField("_corrupt_record", T.StringType(), True)]
@@ -42,7 +41,6 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
     # 5. Apply try_cast to convert Strings to Expected Schema Types
     for field in expected_schema:
         if isinstance(field.dataType, T.StructType):
-            # Parse Odoo array relationships like [501, "Meier Enterprises"] into Structs
             records = records.withColumn(
                 "_pair", F.from_json(F.col(field.name), T.ArrayType(T.StringType()))
             )
@@ -54,13 +52,11 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
                 field.name, F.when(F.size("_pair") == 2, relationship)
             ).drop("_pair")
         elif isinstance(field.dataType, T.StringType):
-            # Handle Odoo exporting missing data as the string "false"
             records = records.withColumn(
                 field.name,
                 F.when(F.lower(F.col(field.name)) == "false", F.lit(None).cast("string")).otherwise(F.col(field.name))
             )
         else:
-            # Safely cast numeric/timestamp fields. Invalid data becomes Null.
             records = records.withColumn(
                 field.name,
                 F.expr(f"try_cast(`{field.name}` as {field.dataType.simpleString()})")
@@ -68,28 +64,35 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
             
     landing_df = records
 
-    # 6. Audit: Log Corrupt Records and Exploratory Stats using instructor's tools
+    # 6. Apply Dynamic Partitioning Logic
+    # Extract the date part. Fall back to ingestion_timestamp if create_date is missing or null.
+    if "create_date" in landing_df.columns:
+        landing_df = landing_df.withColumn(
+            "_partition_date", 
+            F.coalesce(F.to_date(F.col("create_date")), F.to_date(F.col("_ingestion_timestamp")))
+        )
+    else:
+        landing_df = landing_df.withColumn(
+            "_partition_date", 
+            F.to_date(F.col("_ingestion_timestamp"))
+        )
+
+    # 7. Audit: Log Corrupt Records and Exploratory Stats using instructor's tools
     profile_corrupt_records(landing_df, dataset_name=dataset_name, run_id=batch_id)
     
     measures = explore_data(spark, landing_df, dataset_name=dataset_name, run_id=batch_id, required_columns=["id"], processing_stage="LANDING")
     write_exploration_to_iceberg(spark, measures)
 
-    # 7. Split Valid and Quarantine Data
-    # Valid = No parser failure AND mandatory primary key 'id' is present
+    # 8. Split Valid and Quarantine Data
     valid_df = landing_df.filter(F.col("_corrupt_record").isNull() & F.col("id").isNotNull())
     quarantine_df = landing_df.filter(F.col("_corrupt_record").isNotNull() | F.col("id").isNull())
 
-    # 8. Write to Iceberg (Bronze Valid) and HDFS (Quarantine)
-    valid_table = f"datalake.bronze.{dataset_name}"
-    
-    spark.sql("CREATE NAMESPACE IF NOT EXISTS datalake.bronze")
-    if not spark.catalog.tableExists(valid_table):
-        valid_df.writeTo(valid_table).using("iceberg").create()
-    else:
-        valid_df.writeTo(valid_table).append()
+    # 9. Write to HDFS as Standard Parquet (Partitioned)
+    valid_path = f"hdfs:///datalake/bronze_valid/{dataset_name}"
+    quarantine_path = f"hdfs:///datalake/bronze_quarantine/{dataset_name}"
 
-    quarantine_path = f"hdfs:///datalake/quarantine/{dataset_name}"
-    quarantine_df.write.mode("append").format("parquet").save(quarantine_path)
+    valid_df.write.mode("append").partitionBy("_partition_date").format("parquet").save(valid_path)
+    quarantine_df.write.mode("append").partitionBy("_partition_date").format("parquet").save(quarantine_path)
 
-    print(f"Batch {batch_id} complete. Valid records written to {valid_table}. Bad records written to {quarantine_path}.")
+    print(f"Batch {batch_id} complete. Valid records partitioned and written to {valid_path}.")
     return valid_df, quarantine_df
