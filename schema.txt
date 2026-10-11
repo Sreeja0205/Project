@@ -6,11 +6,11 @@ PROJECT_ROOT = "/mnt/c/Training/capstone/Customer_Engagement"
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from schemas.move_lines_schema import EXPECTED_SCHEMA
+from schemas.invoice_lines_schema import EXPECTED_SCHEMA
 from src.bronze_engine import ingest_to_bronze
 
 spark = SparkSession.builder \
-    .appName("Bronze_Ingestion_MoveLines") \
+    .appName("Bronze_Ingestion_InvoiceLines") \
     .config("spark.sql.session.timeZone", "UTC") \
     .config("spark.sql.catalog.datalake", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.datalake.type", "hadoop") \
@@ -18,11 +18,11 @@ spark = SparkSession.builder \
     .getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
-source = "file:///mnt/c/Training/capstone/capstone_data/api-*/csv/inventory/move-lines/*.csv"
+source = "file:///mnt/c/Training/capstone/capstone_data/api-*/csv/invoicing/invoice-lines/*.csv"
 
 valid_df, bad_df = ingest_to_bronze(
     spark=spark,
-    dataset_name="move_lines",
+    dataset_name="invoice_lines",
     source_path=source,
     expected_schema=EXPECTED_SCHEMA,
     source_format="csv"
