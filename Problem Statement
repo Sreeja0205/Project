@@ -1,0 +1,5 @@
+1. Margin-Adjusted Customer Profitability (The "Discount Abuser" Fix)
+
+· The Problem: Your top-line revenue looks great, but your highest-spending customers are actually losing you money because they only buy on deep discounts or return everything.
+· The Analysis: Join sales/order-lines, invoicing/invoices, and inventory/move-lines (for returns). Calculate Net Margin per Customer, not just total sales. Map discount percentages against their lifetime value.
+· Growth Action: Stop sending discounts to "bargain hunters" (high revenue, low margin). Reallocate that marketing budget to "Silent Whales" (moderate revenue, zero discounts, zero returns) to increase their frequency.
