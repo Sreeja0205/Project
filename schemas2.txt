@@ -7,11 +7,15 @@ relationship_schema = T.StructType([
 
 EXPECTED_SCHEMA = T.StructType([
     T.StructField("id", T.LongType(), False),
-    T.StructField("move_id", relationship_schema, True),
-    T.StructField("picking_id", relationship_schema, True),
-    T.StructField("product_id", relationship_schema, True),
-    T.StructField("quantity", T.DecimalType(38, 18), True),
-    T.StructField("location_id", relationship_schema, True),
-    T.StructField("location_dest_id", relationship_schema, True),
+    T.StructField("default_code", T.StringType(), True),
+    T.StructField("name", T.StringType(), True),
+    T.StructField("categ_id", relationship_schema, True),
+    T.StructField("uom_id", relationship_schema, True),
+    T.StructField("list_price", T.DecimalType(38, 18), True),
+    T.StructField("create_date", T.TimestampType(), True),
     T.StructField("write_date", T.TimestampType(), True),
+    T.StructField("active", T.BooleanType(), True),
+    T.StructField("qty_available", T.DecimalType(38, 18), True),
+    T.StructField("virtual_available", T.DecimalType(38, 18), True),
+    T.StructField("product_tmpl_id", relationship_schema, True),
 ])
