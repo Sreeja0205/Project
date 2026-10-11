@@ -2,17 +2,15 @@ import sys
 import os
 from pyspark.sql import SparkSession
 
-# Ensure Python can find your custom modules
-PROJECT_ROOT = "/mnt/c/Training/capstone/Customer_Engagement" # Update to your actual path
+PROJECT_ROOT = "/mnt/c/Training/capstone/Customer_Engagement"
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from schemas.orders_schema import EXPECTED_SCHEMA
+from schemas.order_lines_schema import EXPECTED_SCHEMA
 from src.bronze_engine import ingest_to_bronze
 
-# 1. Initialize Spark with Iceberg config
 spark = SparkSession.builder \
-    .appName("Bronze_Ingestion_Orders") \
+    .appName("Bronze_Ingestion_OrderLines") \
     .config("spark.sql.session.timeZone", "UTC") \
     .config("spark.sql.catalog.datalake", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.datalake.type", "hadoop") \
@@ -20,12 +18,11 @@ spark = SparkSession.builder \
     .getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
-# 2. Run the Engine
-source = "file:///mnt/c/Training/capstone/capstone_data/api-*/csv/sales/orders/*.csv" # Adjust path as needed
+source = "file:///mnt/c/Training/capstone/capstone_data/api-*/csv/sales/order-lines/*.csv"
 
 valid_df, bad_df = ingest_to_bronze(
     spark=spark,
-    dataset_name="orders",
+    dataset_name="order_lines",
     source_path=source,
     expected_schema=EXPECTED_SCHEMA,
     source_format="csv"
