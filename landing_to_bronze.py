@@ -19,6 +19,7 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
     )
 
     # 2. Append _corrupt_record for Permissive Reading
+    # Read everything as String first to catch malformed rows without crashing
     read_schema = T.StructType(
         [T.StructField(field.name, T.StringType(), True) for field in expected_schema.fields] + 
         [T.StructField("_corrupt_record", T.StringType(), True)]
@@ -33,26 +34,54 @@ def process_bronze_batch(spark: SparkSession, dataset_name: str, source_path: st
 
     # 4. Attach Traceability Metadata
     ingestion_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
-    landing_df = raw_df \
+    records = raw_df \
         .withColumn("_source_file", F.input_file_name()) \
         .withColumn("_batch_id", F.lit(batch_id)) \
         .withColumn("_ingestion_timestamp", F.lit(ingestion_timestamp))
 
-    # 5. Audit: Log Corrupt Records and Exploratory Stats using instructor's tools
+    # 5. Apply try_cast to convert Strings to Expected Schema Types
+    for field in expected_schema:
+        if isinstance(field.dataType, T.StructType):
+            # Parse Odoo array relationships like [501, "Meier Enterprises"] into Structs
+            records = records.withColumn(
+                "_pair", F.from_json(F.col(field.name), T.ArrayType(T.StringType()))
+            )
+            relationship = F.struct(
+                F.expr("try_cast(element_at(_pair, 1) as bigint)").alias("id"),
+                F.element_at("_pair", 2).alias("name"),
+            )
+            records = records.withColumn(
+                field.name, F.when(F.size("_pair") == 2, relationship)
+            ).drop("_pair")
+        elif isinstance(field.dataType, T.StringType):
+            # Handle Odoo exporting missing data as the string "false"
+            records = records.withColumn(
+                field.name,
+                F.when(F.lower(F.col(field.name)) == "false", F.lit(None).cast("string")).otherwise(F.col(field.name))
+            )
+        else:
+            # Safely cast numeric/timestamp fields. Invalid data becomes Null.
+            records = records.withColumn(
+                field.name,
+                F.expr(f"try_cast(`{field.name}` as {field.dataType.simpleString()})")
+            )
+            
+    landing_df = records
+
+    # 6. Audit: Log Corrupt Records and Exploratory Stats using instructor's tools
     profile_corrupt_records(landing_df, dataset_name=dataset_name, run_id=batch_id)
     
     measures = explore_data(spark, landing_df, dataset_name=dataset_name, run_id=batch_id, required_columns=["id"], processing_stage="LANDING")
     write_exploration_to_iceberg(spark, measures)
 
-    # 6. Split Valid and Quarantine Data
+    # 7. Split Valid and Quarantine Data
     # Valid = No parser failure AND mandatory primary key 'id' is present
     valid_df = landing_df.filter(F.col("_corrupt_record").isNull() & F.col("id").isNotNull())
     quarantine_df = landing_df.filter(F.col("_corrupt_record").isNotNull() | F.col("id").isNull())
 
-    # 7. Write to Iceberg (Bronze Valid) and HDFS (Quarantine)
+    # 8. Write to Iceberg (Bronze Valid) and HDFS (Quarantine)
     valid_table = f"datalake.bronze.{dataset_name}"
     
-    # Create Iceberg namespace/table if it doesn't exist, then append
     spark.sql("CREATE NAMESPACE IF NOT EXISTS datalake.bronze")
     if not spark.catalog.tableExists(valid_table):
         valid_df.writeTo(valid_table).using("iceberg").create()
