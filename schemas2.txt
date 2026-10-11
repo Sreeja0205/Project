@@ -7,14 +7,20 @@ relationship_schema = T.StructType([
 
 EXPECTED_SCHEMA = T.StructType([
     T.StructField("id", T.LongType(), False),
-    T.StructField("order_id", relationship_schema, True),
-    T.StructField("product_id", relationship_schema, True),
-    T.StructField("product_uom_qty", T.DecimalType(38, 18), True),
-    T.StructField("price_unit", T.DecimalType(38, 18), True),
-    T.StructField("discount", T.DecimalType(38, 18), True),
-    T.StructField("price_subtotal", T.DecimalType(38, 18), True),
+    T.StructField("name", T.StringType(), True),
+    T.StructField("partner_id", relationship_schema, True),
+    T.StructField("invoice_origin", T.StringType(), True),
+    T.StructField("invoice_date", T.TimestampType(), True), # Often exported as Date, but Timestamp is safer for Odoo
+    T.StructField("state", T.StringType(), True),
+    T.StructField("payment_state", T.StringType(), True),
+    T.StructField("amount_untaxed", T.DecimalType(38, 18), True),
+    T.StructField("amount_total", T.DecimalType(38, 18), True),
+    T.StructField("amount_residual", T.DecimalType(38, 18), True),
+    T.StructField("currency_id", relationship_schema, True),
     T.StructField("create_date", T.TimestampType(), True),
     T.StructField("write_date", T.TimestampType(), True),
-    T.StructField("qty_delivered", T.DecimalType(38, 18), True),
-    T.StructField("qty_invoiced", T.DecimalType(38, 18), True),
+    T.StructField("move_type", T.StringType(), True),
+    T.StructField("company_id", relationship_schema, True),
+    T.StructField("ops_issued_at", T.TimestampType(), True),
+    T.StructField("ops_payment_due_at", T.TimestampType(), True),
 ])
