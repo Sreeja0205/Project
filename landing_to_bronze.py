@@ -115,7 +115,7 @@ if __name__ == "__main__":
         .config("spark.sql.session.timeZone", "UTC") \
         .getOrCreate()
         
-    # Example Airflow execution call
+    # Standard Python execution call for local testing
     ingest_orders_to_bronze(
         spark=spark, 
         source_path="file:///path/to/your/landing/orders/*.csv", 
