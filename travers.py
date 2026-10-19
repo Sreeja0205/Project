@@ -1,13 +1,10 @@
-files = [
-    "runners/gold/run_fact_sales.py",
-    "runners/gold/run_fact_invoice.py",
-    "runners/kpis/run_kpi_true_net_margin.py",
-    "runners/kpis/run_kpi_return_cost_index.py",
-    "runners/kpis/run_customer_segmentation.py",
-    "streamlit/app.py"
-]
+import json
 
-for f in files:
-    print(f"\n================ {f} ================")
-    with open(f) as fp:
-        print(fp.read())
+for name in ["kpi_true_net_margin", "kpi_return_cost_index", "kpi_discount_dependency", "customer_segmentation"]:
+    print(f"=== {name} ===")
+    nb = json.load(open(f"notebooks/gold-to-kpi/{name}.ipynb"))
+    for c in nb["cells"]:
+        if c["cell_type"] == "code":
+            txt = "".join(c["source"])
+            if "SparkSession" not in txt:
+                print(txt)
