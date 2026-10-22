@@ -2,23 +2,28 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 spark = SparkSession.builder \
-    .appName("KPI_DISCOUNT_DEPENDENCY") \
+    .appName("KPI_RETURN_COST_INDEX") \
     .config("spark.sql.catalog.gold_catalog", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.gold_catalog.type", "hadoop") \
     .config("spark.sql.catalog.gold_catalog.warehouse", "hdfs://localhost:9000/user/sreeja/capstone/gold/warehouse") \
     .getOrCreate()
 
+orders = spark.table("silver_catalog.silver.orders")
 fact_sales = spark.table("gold_catalog.gold.fact_sales")
 
-kpi_discount = fact_sales.groupBy("customer_id").agg(
-    F.avg("discount_pct").alias("avg_discount_pct"),
-    F.sum("discount_amount").alias("total_discount_amount"),
-    F.sum("gross_sales").alias("total_gross_sales")
-).withColumn(
-    "discount_dependency_ratio", F.col("total_discount_amount") / F.when(F.col("total_gross_sales") == 0, 1).otherwise(F.col("total_gross_sales"))
-)
+orders_clean = orders.withColumn(
+    "customer_id", F.regexp_extract(F.col("partner_id"), r"\[(\d+),", 1).cast("long")
+).select("id", "customer_id", "state")
 
-spark.sql("DROP TABLE IF EXISTS gold_catalog.gold.kpi.kpi_discount_dependency")
-kpi_discount.write.format("iceberg").mode("overwrite").save("gold_catalog.gold.kpi.kpi_discount_dependency")
-print("KPI Discount Dependency completed.")
+leakage_df = fact_sales.join(orders_clean, fact_sales["order_key"] == orders_clean["id"], "left") \
+    .groupBy(fact_sales["customer_id"]).agg(
+        F.sum(F.when(F.col("state") == "cancel", F.col("gross_sales")).otherwise(0.0)).alias("cancellation_loss"),
+        F.sum("discount_amount").alias("total_discounts")
+    ).withColumn(
+        "return_cost_index", F.col("cancellation_loss") + (F.col("total_discounts") * 0.10)
+    )
+
+spark.sql("DROP TABLE IF EXISTS gold_catalog.gold.kpi.kpi_return_cost_index")
+leakage_df.write.format("iceberg").mode("overwrite").save("gold_catalog.gold.kpi.kpi_return_cost_index")
+print("KPI Return Cost Index (Leakage) completed.")
 spark.stop()
