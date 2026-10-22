@@ -2,30 +2,29 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 spark = SparkSession.builder \
-    .appName("CUSTOMER_PROFITABILITY") \
+    .appName("KPI_TRUE_NET_MARGIN") \
     .config("spark.sql.catalog.gold_catalog", "org.apache.iceberg.spark.SparkCatalog") \
     .config("spark.sql.catalog.gold_catalog.type", "hadoop") \
     .config("spark.sql.catalog.gold_catalog.warehouse", "hdfs://localhost:9000/user/sreeja/capstone/gold/warehouse") \
     .getOrCreate()
 
-margin = spark.table("gold_catalog.gold.kpi.kpi_true_net_margin")
-discount = spark.table("gold_catalog.gold.kpi.kpi_discount_dependency").select("customer_id", "discount_dependency_ratio")
-returns = spark.table("gold_catalog.gold.kpi.kpi_return_cost_index").select("customer_id", "return_cost_index")
-customers = spark.table("gold_catalog.gold.dim_customer").select("customer_id", "customer_name")
+fact_sales = spark.table("gold_catalog.gold.fact_sales")
 
-customer_profitability = margin \
-    .join(discount, "customer_id", "left") \
-    .join(returns, "customer_id", "left") \
-    .join(customers, "customer_id", "left") \
-    .withColumn("return_cost_index", F.coalesce(F.col("return_cost_index"), F.lit(0.0))) \
-    .withColumn(
-        "segment",
-        F.when((F.col("true_net_margin_pct") > 20) & (F.col("discount_dependency_ratio") < 0.10), "Core Profit Driver")
-         .when(F.col("discount_dependency_ratio") >= 0.10, "Opportunistic Buyer")
-         .otherwise("Margin Detractor")
-    )
+kpi_margin = fact_sales.groupBy("customer_id").agg(
+    F.sum("gross_sales").alias("gross_revenue"),
+    F.sum("discount_amount").alias("discount_cost"),
+    F.sum("net_sales").alias("net_revenue")
+).withColumn(
+    "return_cost", F.lit(0.0)
+).withColumn(
+    "true_net_profit", F.col("net_revenue") - F.col("return_cost")
+).withColumn(
+    "true_net_margin_pct", F.round((F.col("true_net_profit") / F.when(F.col("gross_revenue") == 0, 1).otherwise(F.col("gross_revenue"))) * 100, 2)
+)
 
-spark.sql("DROP TABLE IF EXISTS gold_catalog.gold.kpi.customer_profitability")
-customer_profitability.write.format("iceberg").mode("overwrite").save("gold_catalog.gold.kpi.customer_profitability")
-print("Customer Profitability table created successfully.")
+spark.sql("CREATE NAMESPACE IF NOT EXISTS gold_catalog.gold.kpi")
+spark.sql("DROP TABLE IF EXISTS gold_catalog.gold.kpi.kpi_true_net_margin")
+
+kpi_margin.write.format("iceberg").mode("overwrite").save("gold_catalog.gold.kpi.kpi_true_net_margin")
+print("KPI True Net Margin completed.")
 spark.stop()
